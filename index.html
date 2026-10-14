@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iVCam Offline - Local WebCam with QR</title>
+    <!-- Tailwind CSS (Offline via CDN or Local if needed) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- QRCode.js Library for Offline QR Generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        body { font-family: 'Siemreap', 'Kantumruy Pro', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-900 text-white min-h-screen flex flex-col items-center justify-between p-4">
+
+    <!-- Header -->
+    <header class="w-full max-w-4xl flex justify-between items-center py-4 border-b border-slate-800">
+        <h1 class="text-xl font-bold flex items-center gap-2">
+            <span class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
+            iVCam Offline (Local Network)
+        </h1>
+        <div id="mode-indicator" class="text-xs bg-slate-800 px-3 py-1 rounded-full text-slate-300">កំពុងរង់ចាំការជ្រើសរើស...</div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="w-full max-w-4xl flex-1 flex flex-col items-center justify-center my-6">
+
+        <!-- Step 0: Choose Mode -->
+        <div id="view-selector" class="text-center space-y-6">
+            <h2 class="text-2xl font-semibold mb-2">តើអ្នកប្រើឧបករណ៍នេះជាអ្វី?</h2>
+            <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                <button onclick="startServerMode()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-4 rounded-xl font-medium shadow-lg transition flex items-center justify-center gap-3">
+                    💻 កុំព្យូទ័រ (Computer Viewer)
+                </button>
+                <button onclick="startClientMode()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-4 rounded-xl font-medium shadow-lg transition flex items-center justify-center gap-3">
+                    📱 ទូរស័ព្ទដៃ (Phone Camera)
+                </button>
+            </div>
+        </div>
+
+        <!-- Computer View (Server / Receiver) -->
+        <div id="computer-view" class="hidden w-full flex flex-col items-center space-y-4">
+            <div class="w-full max-w-2xl bg-slate-800 rounded-2xl overflow-hidden shadow-2xl border border-slate-700 aspect-video flex items-center justify-center relative">
+                <!-- Video Stream Display -->
+                <video id="remote-video" autoplay playsinline class="w-full h-full object-cover"></video>
+                <div id="waiting-overlay" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80 p-6 text-center">
+                    <p class="text-slate-400 mb-4">សូមបើកកាមេរ៉ាទូរស័ព្ទដៃហើយស្កេន QR Code ខាងក្រោមដើម្បីតភ្ជាប់៖</p>
+                    <!-- QR Code Container -->
+                    <div id="qrcode" class="bg-white p-3 rounded-xl shadow-md mb-3"></div>
+                    <p id="connection-url" class="text-xs text-blue-400 font-mono break-all"></p>
+                </div>
+            </div>
+            <div class="flex gap-4">
+                <button onclick="resetApp()" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm">ប្តូររបៀប (Reset)</button>
+            </div>
+        </div>
+
+        <!-- Phone View (Client / Sender) -->
+        <div id="phone-view" class="hidden w-full flex flex-col items-center space-y-4">
+            <div class="w-full max-w-md bg-slate-800 rounded-2xl overflow-hidden shadow-2xl border border-slate-700 aspect-[3/4] relative flex items-center justify-center">
+                <!-- Local Camera Stream -->
+                <video id="local-video" autoplay playsinline muted class="w-full h-full object-cover"></video>
+                <div class="absolute bottom-4 bg-black/60 px-4 py-2 rounded-full text-sm text-green-400 flex items-center gap-2">
+                    <span class="w-2 h-2 bg-green-500 rounded-full animate-ping"></span> កំពុងផ្សាយកាមេរ៉ា
+                </div>
+            </div>
+            <div class="flex gap-4">
+                <button onclick="switchCamera()" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm">ប្តូរកាមេរ៉ា (មុខ/ក្រោយ)</button>
+                <button onclick="resetApp()" class="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg text-sm">ចេញ (Exit)</button>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="text-xs text-slate-500 text-center py-2">
+        ប្រព័ន្ធដំណើរការក្នុងបណ្តាញមូលដ្ឋាន (Local Network Offline) មិនប្រើប្រាស់អ៊ិនធឺណិត
+    </footer>
+
+    <script>
+        let localStream;
+        let currentFacingMode = 'environment'; // ចាប់ផ្តើមជាមួយកាមេរ៉ាក្រោយ
+
+        function resetApp() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            document.getElementById('view-selector').classList.remove('hidden');
+            document.getElementById('computer-view').classList.add('hidden');
+            document.getElementById('phone-view').classList.add('hidden');
+            document.getElementById('mode-indicator').innerText = 'កំពុងរង់ចាំការជ្រើសរើស...';
+        }
+
+        // មុខងារសម្រាប់កុំព្យូទ័រ (បង្ហាញ QR Code សម្រាប់ភ្ជាប់ក្នុង Local Network)
+        function startServerMode() {
+            document.getElementById('view-selector').classList.add('hidden');
+            document.getElementById('computer-view').classList.remove('hidden');
+            document.getElementById('mode-indicator').innerText = 'របៀប៖ កុំព្យូទ័រ (Viewer)';
+
+            // យក IP address ឬ Hostname បច្ចុប្បន្ននៃ Local Network
+            const currentUrl = window.location.href;
+            
+            // បង្កើត QR Code ស្វ័យប្រវត្តិ
+            document.getElementById('qrcode').innerHTML = ""; // សម្អាត QR ចាស់បើមាន
+            new QRCode(document.getElementById("qrcode"), {
+                text: currentUrl,
+                width: 150,
+                height: 150,
+                colorDark : "#000000",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.H
+            });
+
+            document.getElementById('connection-url').innerText = currentUrl;
+        }
+
+        // មុខងារសម្រាប់ទូរស័ព្ទដៃ (បើកកាមេរ៉ា)
+        async function startClientMode() {
+            document.getElementById('view-selector').classList.add('hidden');
+            document.getElementById('phone-view').classList.remove('hidden');
+            document.getElementById('mode-indicator').innerText = 'របៀប៖ ទូរស័ព្ទដៃ (Camera)';
+
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: currentFacingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
+                    audio: false
+                });
+                const localVideo = document.getElementById('local-video');
+                localVideo.srcObject = localStream;
+            } catch (error) {
+                alert('មិនអាចបើកកាមេរ៉ាបានទេ៖ ' + error.message);
+                resetApp();
+            }
+        }
+
+        // ប្តូរកាមេរ៉ាទូរស័ព្ទ (មុខ និង ក្រោយ)
+        async function switchCamera() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+            currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: currentFacingMode },
+                    audio: false
+                });
+                document.getElementById('local-video').srcObject = localStream;
+            } catch (error) {
+                alert('មិនអាចប្តូរកាមេរ៉ាបានទេ៖ ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>
